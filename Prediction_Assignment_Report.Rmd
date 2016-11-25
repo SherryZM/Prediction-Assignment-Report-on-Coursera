@@ -1,0 +1,104 @@
+---
+title: "Prediction Assignment Report"
+author: "Man Zhu"
+date: "2016/11/25"
+output: pdf_document
+---
+
+## Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. And the goal of the project is to predict the manner in which they did the exercise
+
+## Load R packages
+```{r,message=FALSE,warning=FALSE}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+```
+
+## Read the data
+I have downloaded the data from the given URL and stored the data in the default location. Then, we can read the two csv files.  
+```{r}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+```{r}
+dim(training)
+dim(testing)
+```
+The training data set contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables.
+
+## Clean the data
+Before we bulid the forcasting model, the raw data should be cleaned. We will remove the observations with missing values as well as some meaningless variables.
+```{r}
+training <- training[, colSums(is.na(training)) == 0] 
+testing <- testing[, colSums(is.na(testing)) == 0]
+classe <- training$classe # save the classe data before be removed
+trainremove <- grepl("^X|timestamp|window", names(training))
+testremove <- grepl("^X|timestamp|window", names(testing))
+training <- training[, !trainremove]
+testing <- testing[, !testremove]
+traincleaned <- training[, sapply(training, is.numeric)]
+testcleaned <- testing[, sapply(testing, is.numeric)]
+traincleaned$classe <- classe # add classe to the traincleaned dataframe
+testcleaned <- testcleaned[, -ncol(testcleaned)] # remove the problem_id in testdata
+```
+
+## Slice the data
+Then, we will divide the traincleaned into a trainData (70%) and a testData (30%) and use the testData to conduct cross validation in the near future.
+```{r}
+set.seed(8110)
+inTrain <- createDataPartition(traincleaned$classe, p = 0.70, list = F)
+trainData <- traincleaned[inTrain, ]
+testData <- traincleaned[-inTrain, ]
+```
+
+## Bulid the model
+We bulid a forcasting model using random forest algorithm because it is unexcelled in accuracy, runs efficiently on large data bases and gives estimates of what variables are important in the classification. 
+In the validation step, 5-fold cross validation is used when applying the rf algorithm.
+```{r}
+modRf <- train(classe ~ ., data = trainData, method = "rf", 
+               trControl = trainControl(method = "cv", 5), ntree = 100)
+```
+Show the model:
+```{r,echo=FALSE}
+modRf
+```
+Then, we see the prediction performance
+```{r}
+predictRf <- predict(modRf, testData)
+CM <- confusionMatrix(testData$classe, predictRf)
+accuracy <- postResample(predictRf, testData$classe)
+Esample_error <- - as.numeric(accuracy[1]) + 1
+```
+Let's see the outcome of Confusion Matrix:
+```{r,echo=FALSE}
+CM
+```
+The accuracy of the model:
+```{r,echo=FALSE}
+accuracy
+```
+The expected out of sample error:
+```{r,echo=FALSE}
+Esample_error
+```
+Thus, we can conclude that the accuracy of the model is about 99.56% and the expected out of sample error is about 0.44%.
+
+## Predicting for test data set
+Now, we apply the model to the original testing data set (have been cleaned)
+```{r}
+pred <- predict(modRf, testcleaned)
+```
+Show the prediction result for the test data set:
+```{r,echo=FALSE}
+pred
+```
+
+## One figure: Visualization for the Decision Tree 
+```{r}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel)
+```
